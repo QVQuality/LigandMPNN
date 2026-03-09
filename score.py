@@ -37,6 +37,8 @@ def main(args) -> None:
         os.makedirs(base_folder, exist_ok=True)
     if args.model_type == "protein_mpnn":
         checkpoint_path = args.checkpoint_protein_mpnn
+    elif args.model_type == "hyper_mpnn":
+        checkpoint_path = args.checkpoint_hyper_mpnn
     elif args.model_type == "ligand_mpnn":
         checkpoint_path = args.checkpoint_ligand_mpnn
     elif args.model_type == "per_residue_label_membrane_mpnn":
@@ -235,7 +237,7 @@ def main(args) -> None:
             other_atoms.setBetas(other_bfactors * 0.0)
 
         # adjust input PDB name by dropping .pdb if it does exist
-        name = pdb[pdb.rfind("/") + 1 :]
+        name = pdb[pdb.rfind("/") + 1:]
         if name[-4:] == ".pdb":
             name = name[:-4]
 
@@ -307,7 +309,7 @@ def main(args) -> None:
             out_dict["decoding_order"] = decoding_order_stack.cpu().numpy()
             out_dict["native_sequence"] = feature_dict["S"][0].cpu().numpy()
             out_dict["mask"] = feature_dict["mask"][0].cpu().numpy()
-            out_dict["chain_mask"] = feature_dict["chain_mask"][0].cpu().numpy() #this affects decoding order
+            out_dict["chain_mask"] = feature_dict["chain_mask"][0].cpu().numpy()  # this affects decoding order
             out_dict["seed"] = seed
             out_dict["alphabet"] = alphabet
             out_dict["residue_names"] = encoded_residue_dict_rev
@@ -327,7 +329,6 @@ def main(args) -> None:
             out_dict["mean_of_probs"] = mean_dict
             out_dict["std_of_probs"] = std_dict
             torch.save(out_dict, output_stats_path)
-
 
 
 if __name__ == "__main__":
@@ -350,6 +351,12 @@ if __name__ == "__main__":
         "--checkpoint_protein_mpnn",
         type=str,
         default="./model_params/proteinmpnn_v_48_020.pt",
+        help="Path to model weights.",
+    )
+    argparser.add_argument(
+        "--checkpoint_hyper_mpnn",
+        type=str,
+        default="./model_params/hypermpnn_v_48_020.pt",
         help="Path to model weights.",
     )
     argparser.add_argument(
@@ -421,7 +428,7 @@ if __name__ == "__main__":
         default="",
         help="Add list of lists for which residues need to be symmetric, e.g. 'A12,A13,A14|C2,C3|A5,B6'",
     )
-    
+
     argparser.add_argument(
         "--homo_oligomer",
         type=int,

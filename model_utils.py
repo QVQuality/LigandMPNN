@@ -61,7 +61,7 @@ class ProteinMPNN(torch.nn.Module):
             self.y_context_encoder_layers = torch.nn.ModuleList(
                 [DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(2)]
             )
-        elif self.model_type == "protein_mpnn" or self.model_type == "soluble_mpnn":
+        elif self.model_type in {"protein_mpnn", "hyper_mpnn", "soluble_mpnn"}:
             self.features = ProteinFeatures(
                 node_features, edge_features, top_k=k_neighbors, augment_eps=augment_eps
             )
@@ -153,7 +153,7 @@ class ProteinMPNN(torch.nn.Module):
 
             h_V_C = self.V_C(h_V_C)
             h_V = h_V + self.V_C_norm(self.dropout(h_V_C))
-        elif self.model_type == "protein_mpnn" or self.model_type == "soluble_mpnn":
+        elif self.model_type in {"protein_mpnn", "hyper_mpnn", "soluble_mpnn"}:
             E, E_idx = self.features(feature_dict)
             h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), device=device)
             h_E = self.W_e(E)
@@ -417,19 +417,19 @@ class ProteinMPNN(torch.nn.Module):
                     mask_t = mask[:, t]  # [B]
                     bias_t = bias[:, t]  # [B, 21]
 
-                    E_idx_t = E_idx[:, t : t + 1]
-                    h_E_t = h_E[:, t : t + 1]
+                    E_idx_t = E_idx[:, t: t + 1]
+                    h_E_t = h_E[:, t: t + 1]
                     h_ES_t = cat_neighbors_nodes(h_S, h_E_t, E_idx_t)
-                    h_EXV_encoder_t = h_EXV_encoder_fw[:, t : t + 1]
+                    h_EXV_encoder_t = h_EXV_encoder_fw[:, t: t + 1]
                     for l, layer in enumerate(self.decoder_layers):
                         h_ESV_decoder_t = cat_neighbors_nodes(
                             h_V_stack[l], h_ES_t, E_idx_t
                         )
-                        h_V_t = h_V_stack[l][:, t : t + 1]
+                        h_V_t = h_V_stack[l][:, t: t + 1]
                         h_ESV_t = (
-                            mask_bw[:, t : t + 1] * h_ESV_decoder_t + h_EXV_encoder_t
+                            mask_bw[:, t: t + 1] * h_ESV_decoder_t + h_EXV_encoder_t
                         )
-                        h_V_stack[l + 1][:, t : t + 1, :] = layer(
+                        h_V_stack[l + 1][:, t: t + 1, :] = layer(
                             h_V_t, h_ESV_t, mask_V=mask_t[:, None]
                         )
 
@@ -543,10 +543,10 @@ class ProteinMPNN(torch.nn.Module):
 
             logits = self.W_out(h_V)
             log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-            
-            log_probs_out[:,idx,:] = log_probs[:,idx,:]
-            logits_out[:,idx,:] = logits[:,idx,:]
-            decoding_order_out[:,idx,:] = decoding_order
+
+            log_probs_out[:, idx, :] = log_probs[:, idx, :]
+            logits_out[:, idx, :] = logits[:, idx, :]
+            decoding_order_out[:, idx, :] = decoding_order
 
         output_dict = {
             "S": S_true,
@@ -555,7 +555,6 @@ class ProteinMPNN(torch.nn.Module):
             "decoding_order": decoding_order_out,
         }
         return output_dict
-
 
     def score(self, feature_dict, use_sequence: bool):
         B_decoder = feature_dict["batch_size"]
@@ -646,7 +645,7 @@ class ProteinMPNN(torch.nn.Module):
         h_EXV_encoder_fw = mask_fw * h_EXV_encoder
         if not use_sequence:
             for layer in self.decoder_layers:
-                h_V = layer(h_V, h_EXV_encoder_fw, mask)          
+                h_V = layer(h_V, h_EXV_encoder_fw, mask)
         else:
             for layer in self.decoder_layers:
                 # Masked positions attend to encoder information, unmasked see.
