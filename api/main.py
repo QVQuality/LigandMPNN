@@ -33,6 +33,9 @@ async def paint_with_an_rcmpnn(
     random_seed: int,
     ckpt_path: Path | None,
     run_output_dirname: str,
+    plm_bias: str = "",
+    plm_bias_mode: str = "aware",
+    plm_bias_weight: float = 1.0,
 ):
     # read the pdb file, if it exists
     if not pdb_file.filename.endswith(".pdb"):
@@ -73,6 +76,10 @@ async def paint_with_an_rcmpnn(
         cmd += ["--omit_AA", omit_aas]
     if ckpt_path is not None:
         cmd += [f"--checkpoint_{model_type}", str(ckpt_path)]
+    if plm_bias:
+        cmd += ["--plm_bias", plm_bias,
+                "--plm_bias_mode", plm_bias_mode,
+                "--plm_bias_weight", str(plm_bias_weight)]
 
     start_time = time.time()
     try:
@@ -121,6 +128,9 @@ async def paint_with_pmpnn(
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
 ):
     ckpt_path = Path("./model_params/proteinmpnn_v_48_020.pt")
     if noise is not None:
@@ -142,6 +152,9 @@ async def paint_with_pmpnn(
         random_seed=random_seed,
         ckpt_path=ckpt_path,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
     )
 
 
@@ -155,6 +168,9 @@ async def paint_with_hmpnn(
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
 ):
     ckpt_path = Path("./model_params/hypermpnn_v_48_020.pt")
     if noise is not None:
@@ -176,6 +192,9 @@ async def paint_with_hmpnn(
         random_seed=random_seed,
         ckpt_path=ckpt_path,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
     )
 
 
@@ -189,6 +208,9 @@ async def paint_with_lmpnn(
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
 ):
     ckpt_path = Path("./model_params/ligandmpnn_v_32_010_25.pt")
     if noise is not None:
@@ -210,6 +232,9 @@ async def paint_with_lmpnn(
         random_seed=random_seed,
         ckpt_path=ckpt_path,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
     )
 
 
@@ -223,6 +248,9 @@ async def paint_with_smpnn(
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
 ):
     ckpt_path = Path("./model_params/solublempnn_v_48_020.pt")
     if noise is not None:
@@ -244,6 +272,9 @@ async def paint_with_smpnn(
         random_seed=random_seed,
         ckpt_path=ckpt_path,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
     )
 
 
