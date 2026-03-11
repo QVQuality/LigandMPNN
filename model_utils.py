@@ -345,12 +345,12 @@ class ProteinMPNN(torch.nn.Module):
                             plm_static, 1,
                             t[:, None, None].repeat(1, 1, 21),
                         )[:, 0, :]  # [B, 21]
-                    # aware: dynamic PLM callback
+                    # aware: dynamic PLM callback - returns [B, 21]
                     plm_bias_fn = feature_dict.get("plm_bias_fn")
                     if plm_bias_fn is not None:
                         plm_bias_t = plm_bias_fn(S, S_true, t)
                         if plm_bias_t is not None:
-                            plm_raw = plm_bias_t[None, :].to(device)  # [1, 21]
+                            plm_raw = plm_bias_t.to(device)  # [B, 21]
                     # z-score normalize & add
                     if plm_raw is not None and plm_raw[:, :20].abs().sum() > 0:
                         mpnn_20 = logits[:, :20]

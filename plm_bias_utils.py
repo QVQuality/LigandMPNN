@@ -154,33 +154,35 @@ def make_aware_callback(
             return None
         local_idx, ci = chain_info[t_idx]
 
-        # Build chain sequence: sampled AAs where available, native elsewhere
-        s_np = S_current[0].cpu().numpy()
-        s_true_np = S_true_seq[0].cpu().numpy()
-        chain_seq_chars = []
-        for gi in ci:
-            aa_int = s_np[gi]
-            if aa_int >= 20:  # X / not yet assigned -> use native
-                chain_seq_chars.append(restype_int_to_str[s_true_np[gi]])
-            else:
-                chain_seq_chars.append(restype_int_to_str[aa_int])
-        chain_seq = "".join(chain_seq_chars)
+        B = S_current.shape[0]
+        results = torch.zeros(B, 21, device=S_current.device, dtype=torch.float32)
 
-        # PLM forward: mask only the current position
-        pos_logits = plm.infill_logits(chain_seq, [local_idx])[0]
+        # Run a separate PLM forward for each sequence in the batch so each
+        # gets logits conditioned on *its own* partial decoding context.
+        for b in range(B):
+            s_np = S_current[b].cpu().numpy()
+            s_true_np = S_true_seq[b].cpu().numpy()
+            chain_seq_chars = []
+            for gi in ci:
+                aa_int = s_np[gi]
+                if aa_int >= 20:  # X / not yet assigned -> use native
+                    chain_seq_chars.append(restype_int_to_str[s_true_np[gi]])
+                else:
+                    chain_seq_chars.append(restype_int_to_str[aa_int])
+            chain_seq = "".join(chain_seq_chars)
 
-        result = torch.zeros(21, device=S_current.device, dtype=torch.float32)
-        for aa_char, logit_val in pos_logits.items():
-            aa_idx = restype_str_to_int.get(aa_char)
-            if aa_idx is not None:
-                result[aa_idx] = logit_val
+            pos_logits = plm.infill_logits(chain_seq, [local_idx])[0]
+            for aa_char, logit_val in pos_logits.items():
+                aa_idx = restype_str_to_int.get(aa_char)
+                if aa_idx is not None:
+                    results[b, aa_idx] = logit_val
 
         log.debug(
-            "  [aware] t=%d  local=%d  chain_len=%d",
-            t_idx, local_idx, len(chain_seq),
+            "  [aware] t=%d  local=%d  chain_len=%d  B=%d",
+            t_idx, local_idx, len(chain_seq), B,
         )
-        # return raw PLM logits; normalization + weighting is done in
-        # model_utils.py where MPNN logits are available
-        return result
+        # return [B, 21] raw PLM logits; normalization + weighting is done in
+        # model_utils.py where MPNN logits are available.
+        return results
 
     return _plm_bias_fn
