@@ -126,14 +126,18 @@ def inject_agnostic_bias(
 def make_aware_callback(
     plm: "PLMInfiller",
     chain_info: dict[int, tuple[int, list[int]]],
+    design_mask,
 ):
     """Return a callback suitable for ``feature_dict["plm_bias_fn"]``.
 
     The callback is invoked at every designed position during auto-regressive
     decoding.  It reads the *current* partially-sampled sequence ``S``, builds
-    the chain context, calls the PLM for the single position being decoded,
-    and returns a raw ``[21]`` logit tensor.  Z-score normalization and
-    weighting happen in ``model_utils.py``.
+    the chain context, and calls the PLM with **all** not-yet-decoded designed
+    positions masked.  As decoding progresses, more positions are filled in,
+    giving the PLM increasingly more context.  Non-designed positions always
+    provide their known (native) residues as context.
+
+    Z-score normalization and weighting happen in ``model_utils.py``.
 
     Parameters
     ----------
@@ -141,46 +145,54 @@ def make_aware_callback(
         Loaded PLM model.
     chain_info : dict
         Output of :func:`build_chain_info`.
+    design_mask : numpy.ndarray
+        Shape ``[L]``, 1.0 for positions to be redesigned, 0.0 otherwise.
 
     Returns
     -------
     callable
-        ``(S_current, S_true_seq, t_indices) → Tensor[21] | None``
+        ``(S_current, S_true_seq, t_indices) → Tensor[B, 21] | None``
     """
 
     def _plm_bias_fn(S_current, S_true_seq, t_indices):
-        t_idx = t_indices[0].item()
-        if t_idx not in chain_info:
-            return None
-        local_idx, ci = chain_info[t_idx]
-
+        # t_indices is [B] — each batch element decodes a DIFFERENT position
+        # (MPNN uses a random decoding order per batch element).
         B = S_current.shape[0]
         results = torch.zeros(B, 21, device=S_current.device, dtype=torch.float32)
 
-        # Run a separate PLM forward for each sequence in the batch so each
-        # gets logits conditioned on *its own* partial decoding context.
         for b in range(B):
+            t_idx_b = t_indices[b].item()
+            if t_idx_b not in chain_info:
+                continue
+            local_idx_b, ci = chain_info[t_idx_b]
+
             s_np = S_current[b].cpu().numpy()
             s_true_np = S_true_seq[b].cpu().numpy()
             chain_seq_chars = []
-            for gi in ci:
+            mask_local = []  # local indices of designed positions still to decode
+            for loc, gi in enumerate(ci):
                 aa_int = s_np[gi]
-                if aa_int >= 20:  # X / not yet assigned -> use native
-                    chain_seq_chars.append(restype_int_to_str[s_true_np[gi]])
-                else:
+                if aa_int < 20:
+                    # Already decoded (designed or non-designed) → real AA
                     chain_seq_chars.append(restype_int_to_str[aa_int])
+                elif design_mask[gi] > 0.5:
+                    # Designed but not yet decoded → mask for PLM
+                    chain_seq_chars.append("A")  # placeholder, overwritten by [MASK]
+                    mask_local.append(loc)
+                else:
+                    # Non-designed, not yet visited → use native (known/fixed)
+                    chain_seq_chars.append(restype_int_to_str[s_true_np[gi]])
             chain_seq = "".join(chain_seq_chars)
 
-            pos_logits = plm.infill_logits(chain_seq, [local_idx])[0]
+            # Mask ALL undecoded designed positions; extract logits for current
+            target_idx = mask_local.index(local_idx_b)
+            pos_logits = plm.infill_logits(chain_seq, mask_local)[target_idx]
             for aa_char, logit_val in pos_logits.items():
                 aa_idx = restype_str_to_int.get(aa_char)
                 if aa_idx is not None:
                     results[b, aa_idx] = logit_val
 
-        log.debug(
-            "  [aware] t=%d  local=%d  chain_len=%d  B=%d",
-            t_idx, local_idx, len(chain_seq), B,
-        )
+        log.debug("  [aware] t_batch0=%d  B=%d", t_indices[0].item(), B)
         # return [B, 21] raw PLM logits; normalization + weighting is done in
         # model_utils.py where MPNN logits are available.
         return results

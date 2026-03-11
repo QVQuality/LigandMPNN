@@ -439,7 +439,8 @@ def main(args) -> None:
 
                 elif args.plm_bias_mode == "aware":
                     chain_info = build_chain_info(chain_letters_arr)
-                    feature_dict["plm_bias_fn"] = make_aware_callback(plm, chain_info)
+                    design_mask = feature_dict["chain_mask"][0].cpu().numpy()
+                    feature_dict["plm_bias_fn"] = make_aware_callback(plm, chain_info, design_mask)
                     feature_dict["plm_bias_weight"] = args.plm_bias_weight
                     if args.verbose:
                         n_designed = int(feature_dict["chain_mask"][0].cpu().numpy().sum())
