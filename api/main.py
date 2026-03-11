@@ -36,6 +36,7 @@ async def paint_with_an_rcmpnn(
     plm_bias: str = "",
     plm_bias_mode: str = "aware",
     plm_bias_weight: float = 1.0,
+    save_stats: bool = False,
 ):
     # read the pdb file, if it exists
     if not pdb_file.filename.endswith(".pdb"):
@@ -80,6 +81,8 @@ async def paint_with_an_rcmpnn(
         cmd += ["--plm_bias", plm_bias,
                 "--plm_bias_mode", plm_bias_mode,
                 "--plm_bias_weight", str(plm_bias_weight)]
+    if save_stats:
+        cmd += ["--save_stats", "1"]
 
     start_time = time.time()
     try:
@@ -131,6 +134,7 @@ async def paint_with_pmpnn(
     plm_bias: Optional[str] = Form(""),
     plm_bias_mode: Optional[str] = Form("aware"),
     plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     ckpt_path = Path("./model_params/proteinmpnn_v_48_020.pt")
     if noise is not None:
@@ -155,6 +159,7 @@ async def paint_with_pmpnn(
         plm_bias=plm_bias or "",
         plm_bias_mode=plm_bias_mode or "aware",
         plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
 
 
@@ -171,6 +176,7 @@ async def paint_with_hmpnn(
     plm_bias: Optional[str] = Form(""),
     plm_bias_mode: Optional[str] = Form("aware"),
     plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     ckpt_path = Path("./model_params/hypermpnn_v_48_020.pt")
     if noise is not None:
@@ -195,6 +201,7 @@ async def paint_with_hmpnn(
         plm_bias=plm_bias or "",
         plm_bias_mode=plm_bias_mode or "aware",
         plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
 
 
@@ -211,6 +218,7 @@ async def paint_with_lmpnn(
     plm_bias: Optional[str] = Form(""),
     plm_bias_mode: Optional[str] = Form("aware"),
     plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     ckpt_path = Path("./model_params/ligandmpnn_v_32_010_25.pt")
     if noise is not None:
@@ -235,6 +243,7 @@ async def paint_with_lmpnn(
         plm_bias=plm_bias or "",
         plm_bias_mode=plm_bias_mode or "aware",
         plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
 
 
@@ -251,6 +260,7 @@ async def paint_with_smpnn(
     plm_bias: Optional[str] = Form(""),
     plm_bias_mode: Optional[str] = Form("aware"),
     plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     ckpt_path = Path("./model_params/solublempnn_v_48_020.pt")
     if noise is not None:
@@ -275,6 +285,7 @@ async def paint_with_smpnn(
         plm_bias=plm_bias or "",
         plm_bias_mode=plm_bias_mode or "aware",
         plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
 
 
@@ -287,6 +298,10 @@ async def paint_with_pmpnn_gml(
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     await paint_with_an_rcmpnn(
         model_type="global_label_membrane_mpnn",
@@ -298,6 +313,10 @@ async def paint_with_pmpnn_gml(
         random_seed=random_seed,
         ckpt_path=None,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
 
 
@@ -310,6 +329,10 @@ async def paint_with_pmpnn_prml(
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     run_output_dirname: str = Form(""),
+    plm_bias: Optional[str] = Form(""),
+    plm_bias_mode: Optional[str] = Form("aware"),
+    plm_bias_weight: Optional[float] = Form(1.0),
+    save_stats: bool = Form(False),
 ):
     await paint_with_an_rcmpnn(
         model_type="per_residue_label_membrane_mpnn",
@@ -321,4 +344,8 @@ async def paint_with_pmpnn_prml(
         random_seed=random_seed,
         ckpt_path=None,
         run_output_dirname=run_output_dirname,
+        plm_bias=plm_bias or "",
+        plm_bias_mode=plm_bias_mode or "aware",
+        plm_bias_weight=plm_bias_weight if plm_bias_weight is not None else 1.0,
+        save_stats=save_stats,
     )
