@@ -342,7 +342,7 @@ class ProteinMPNN(torch.nn.Module):
                     plm_static = feature_dict.get("plm_bias_static")
                     if plm_static is not None:
                         plm_raw = torch.gather(
-                            plm_static, 1,
+                            plm_static.expand(t.shape[0], -1, -1), 1,
                             t[:, None, None].repeat(1, 1, 21),
                         )[:, 0, :]  # [B, 21]
                     # aware: dynamic PLM callback - returns [B, 21]
