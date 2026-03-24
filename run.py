@@ -20,6 +20,8 @@ from data_utils import (
     write_full_PDB,
 )
 from model_utils import ProteinMPNN
+from plminfillers import PLMInfiller
+from plm_bias_utils import build_chain_info, inject_agnostic_bias, make_aware_callback
 from prody import writePDB
 from sc_utils import Packer, pack_side_chains
 
@@ -92,6 +94,19 @@ def main(args) -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
+
+    # optionally load a PLM for logit-level bias (Alamo et al. 2025)
+    plm = None
+    if args.plm_bias:
+        if args.plm_bias not in PLMInfiller.SUPPORTED_MODELS:
+            print(
+                f"Unsupported PLM model: {args.plm_bias}. "
+                f"Choose from: {', '.join(sorted(PLMInfiller.SUPPORTED_MODELS))}"
+            )
+            sys.exit(1)
+        print(f"Loading PLM for logit bias: {args.plm_bias}")
+        plm = PLMInfiller(args.plm_bias, device=str(device))
+        print(f"PLM loaded. Bias weight (lambda): {args.plm_bias_weight}")
 
     if args.pack_side_chains:
         model_sc = Packer(
@@ -409,6 +424,28 @@ def main(args) -> None:
                 + bias_AA_per_residue[None]
                 - 1e8 * omit_AA_per_residue[None]
             )
+
+            # PLM logit bias (inspired by Alamo et al. 2025)
+            if plm is not None:
+                chain_letters_arr = protein_dict["chain_letters"]
+
+                if args.plm_bias_mode == "agnostic":
+                    inject_agnostic_bias(
+                        feature_dict, plm, chain_letters_arr,
+                        weight=args.plm_bias_weight, device=device,
+                    )
+                    if args.verbose:
+                        print(f"PLM bias (agnostic) applied (lambda={args.plm_bias_weight})")
+
+                elif args.plm_bias_mode == "aware":
+                    chain_info = build_chain_info(chain_letters_arr)
+                    design_mask = feature_dict["chain_mask"][0].cpu().numpy()
+                    feature_dict["plm_bias_fn"] = make_aware_callback(plm, chain_info, design_mask)
+                    feature_dict["plm_bias_weight"] = args.plm_bias_weight
+                    if args.verbose:
+                        n_designed = int(feature_dict["chain_mask"][0].cpu().numpy().sum())
+                        print(f"PLM bias (aware) enabled for {n_designed} positions (lambda={args.plm_bias_weight})")
+
             feature_dict["symmetry_residues"] = remapped_symmetry_residues
             feature_dict["symmetry_weights"] = symmetry_weights
 
@@ -419,6 +456,11 @@ def main(args) -> None:
             loss_list = []
             loss_per_residue_list = []
             loss_XY_list = []
+            # debug/reporting: per-position logit breakdown across all seqs
+            _dbg_mpnn_list = []
+            _dbg_plm_raw_list = []
+            _dbg_plm_scaled_list = []
+            _dbg_final_list = []
             for _ in range(args.number_of_batches):
                 feature_dict["randn"] = torch.randn(
                     [feature_dict["batch_size"], feature_dict["mask"].shape[1]],
@@ -451,6 +493,12 @@ def main(args) -> None:
                 loss_list.append(loss)
                 loss_per_residue_list.append(loss_per_residue)
                 loss_XY_list.append(loss_XY)
+                # debug logits (present only when PLM bias is active)
+                if "dbg_mpnn_logits" in output_dict:
+                    _dbg_mpnn_list.append(output_dict["dbg_mpnn_logits"])
+                    _dbg_plm_raw_list.append(output_dict["dbg_plm_raw"])
+                    _dbg_plm_scaled_list.append(output_dict["dbg_plm_scaled"])
+                    _dbg_final_list.append(output_dict["dbg_final_logits"])
             S_stack = torch.cat(S_list, 0)
             log_probs_stack = torch.cat(log_probs_list, 0)
             sampling_probs_stack = torch.cat(sampling_probs_list, 0)
@@ -486,6 +534,12 @@ def main(args) -> None:
             out_dict["chain_mask"] = feature_dict["chain_mask"][0].cpu()
             out_dict["seed"] = seed
             out_dict["temperature"] = args.temperature
+            # debug: include PLM logit breakdown when available
+            if _dbg_mpnn_list:
+                out_dict["dbg_mpnn_logits"] = torch.cat(_dbg_mpnn_list, 0).cpu()
+                out_dict["dbg_plm_raw"] = torch.cat(_dbg_plm_raw_list, 0).cpu()
+                out_dict["dbg_plm_scaled"] = torch.cat(_dbg_plm_scaled_list, 0).cpu()
+                out_dict["dbg_final_logits"] = torch.cat(_dbg_final_list, 0).cpu()
             if args.save_stats:
                 torch.save(out_dict, output_stats_path)
 
@@ -991,6 +1045,29 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="1-pack side chains using ligand context, 0 - do not use it.",
+    )
+
+    argparser.add_argument(
+        "--plm_bias",
+        type=str,
+        default="",
+        help="Name of a protein language model (MLM) whose logits are combined with the MPNN logits before sampling (Alamo et al. 2025). "
+             f"Supported: {', '.join(sorted(PLMInfiller.SUPPORTED_MODELS))}. Empty string disables PLM bias.",
+    )
+    argparser.add_argument(
+        "--plm_bias_mode",
+        type=str,
+        default="aware",
+        choices=["agnostic", "aware"],
+        help="'aware': PLM called at every step of the autoregressive loop with previously sampled residues filled in. "
+             "'agnostic': one PLM call before sampling (all designed positions masked at once). ",
+    )
+    argparser.add_argument(
+        "--plm_bias_weight",
+        type=float,
+        default=1.0,
+        help="Scaling factor (lambda) for the PLM logits before combining with the MPNN logits. "
+             "Higher values make the PLM distribution more influential.",
     )
 
     args = argparser.parse_args()
