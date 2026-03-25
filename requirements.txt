@@ -12,7 +12,9 @@ pyparsing==3.1.1
 setuptools<82 # >=82 removed pkg_resources which is required by prody
 scipy==1.12.0
 sympy
-torch>=2.6
+# Keep Torch on a pre-CUDA-13 build so the RCMPNN container remains compatible
+# with hosts that expose older NVIDIA driver/runtime combinations into Docker.
+torch==2.6.0
 transformers
 typing_extensions==4.10.0
 ml-collections==0.1.1
