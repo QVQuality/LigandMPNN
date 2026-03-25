@@ -10,6 +10,8 @@ from typing import Optional
 from Bio import SeqIO
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 
+from plminfillers.plminfillers import PLMInfiller
+
 
 BASE_DIR = Path("/outputs")
 
@@ -21,6 +23,14 @@ app = FastAPI(title="Unified RosettaCommons ProteinMPNN-based models API")
 @app.get("/v1/health/ready")
 async def health_check():
     return {"status": "ready"}
+
+
+@app.get("/v1/info/plm-models")
+async def get_plm_models():
+    return {
+        "models": sorted(PLMInfiller.SUPPORTED_MODELS),
+        "modes": ["aware", "agnostic"],
+    }
 
 
 async def paint_with_an_rcmpnn(

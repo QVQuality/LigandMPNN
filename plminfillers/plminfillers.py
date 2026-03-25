@@ -1,5 +1,7 @@
 import ablang2
 import torch
+import os
+from pathlib import Path
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 
@@ -10,8 +12,14 @@ class PLMInfiller:
     """
     Unified wrapper around HuggingFace MLM and ablang2 protein language models.
 
-    Supports: VHHBERT, nanoBERT, AntiBERTa2, AbLang, AbLang2.
+    Supports: VHHBERT, nanoBERT, AntiBERTa2, AbLang, AbLang2, plus any
+    local Hugging Face-style models discovered under kuzco_models/*/final_model.
     """
+
+    _BASE_DIR = Path(__file__).resolve().parent
+    _KUZCO_MODELS_DIR = Path(
+        os.environ.get("KUZCO_MODELS_DIR", str(_BASE_DIR / "kuzco_models"))
+    )
 
     # Models whose HF tokenizer needs space-separated single-char input
     _SPACE_SEP = {"VHHBERT", "AntiBERTa2"}
@@ -30,7 +38,38 @@ class PLMInfiller:
         "AntiBERTa2": lambda: AutoTokenizer.from_pretrained("alchemab/antiberta2"),
     }
 
-    SUPPORTED_MODELS = set(_MODEL_GENERATORS.keys())
+    @classmethod
+    def _discover_local_models(cls) -> dict[str, Path]:
+        discovered_models = {}
+        if not cls._KUZCO_MODELS_DIR.exists():
+            return discovered_models
+
+        for model_dir in sorted(cls._KUZCO_MODELS_DIR.iterdir()):
+            if not model_dir.is_dir():
+                continue
+            final_model_dir = model_dir / "final_model"
+            if final_model_dir.is_dir():
+                discovered_models[model_dir.name] = final_model_dir
+
+        return discovered_models
+
+    @classmethod
+    def _build_model_generators(cls) -> dict[str, callable]:
+        model_generators = dict(cls._MODEL_GENERATORS)
+        for model_name, model_path in cls._discover_local_models().items():
+            model_generators[model_name] = lambda model_path=model_path: AutoModelForMaskedLM.from_pretrained(model_path)
+        return model_generators
+
+    @classmethod
+    def _build_tokenizer_generators(cls) -> dict[str, callable]:
+        tokenizer_generators = dict(cls._TOKENIZER_GENERATORS)
+        for model_name, model_path in cls._discover_local_models().items():
+            tokenizer_generators[model_name] = lambda model_path=model_path: AutoTokenizer.from_pretrained(model_path)
+        return tokenizer_generators
+
+    _ALL_MODEL_GENERATORS = {}
+    _ALL_TOKENIZER_GENERATORS = {}
+    SUPPORTED_MODELS = set()
 
     def __init__(self, name: str, device: str = None):
         if name not in self.SUPPORTED_MODELS:
@@ -50,8 +89,8 @@ class PLMInfiller:
             self._mask_id = vocab["*"]
             self._specials = set(self._tokenizer.all_special_tokens) if name == "AbLang2" else None
         else:
-            self._model = self._MODEL_GENERATORS[name]().to(self.device).eval()
-            self._tokenizer = self._TOKENIZER_GENERATORS[name]()
+            self._model = self._ALL_MODEL_GENERATORS[name]().to(self.device).eval()
+            self._tokenizer = self._ALL_TOKENIZER_GENERATORS[name]()
             self._aa_ids = {aa: self._tokenizer.convert_tokens_to_ids(aa) for aa in AA}
             self._mask_id = self._tokenizer.mask_token_id
             self._special_ids = {
@@ -114,3 +153,8 @@ class PLMInfiller:
             {aa: logits[0, tp, tid].item() for aa, tid in self._aa_ids.items()}
             for tp in token_positions
         ]
+
+
+PLMInfiller._ALL_MODEL_GENERATORS = PLMInfiller._build_model_generators()
+PLMInfiller._ALL_TOKENIZER_GENERATORS = PLMInfiller._build_tokenizer_generators()
+PLMInfiller.SUPPORTED_MODELS = set(PLMInfiller._ALL_MODEL_GENERATORS.keys())
