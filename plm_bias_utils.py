@@ -83,7 +83,8 @@ def inject_agnostic_bias(
         Device for the bias tensor.
     """
     L = feature_dict["X"].shape[1]
-    design_mask = feature_dict["chain_mask"][0].cpu().numpy()
+    # must match the sampler's effective mask (model_utils.py: mask * chain_mask)
+    design_mask = (feature_dict["mask"] * feature_dict["chain_mask"])[0].cpu().numpy()
     native_ints = feature_dict["S"][0].cpu().numpy()
     native_seq = "".join(restype_int_to_str[aa] for aa in native_ints)
     plm_bias = torch.zeros([1, L, 21], device=device, dtype=torch.float32)
@@ -160,6 +161,7 @@ def make_aware_callback(
         B = S_current.shape[0]
         results = torch.zeros(B, 21, device=S_current.device, dtype=torch.float32)
 
+        specs = []  # (b, chain_seq, mask_local, target_idx)
         for b in range(B):
             t_idx_b = t_indices[b].item()
             if t_idx_b not in chain_info:
@@ -184,15 +186,28 @@ def make_aware_callback(
                     chain_seq_chars.append(restype_int_to_str[s_true_np[gi]])
             chain_seq = "".join(chain_seq_chars)
 
+            if local_idx_b not in mask_local:
+                # this element is decoding a position it does not redesign, so
+                # there is nothing to infill; its decoding order is its own
+                continue
+
             # Mask ALL undecoded designed positions; extract logits for current
-            target_idx = mask_local.index(local_idx_b)
-            pos_logits = plm.infill_logits(chain_seq, mask_local)[target_idx]
-            for aa_char, logit_val in pos_logits.items():
+            specs.append((b, chain_seq, mask_local, mask_local.index(local_idx_b)))
+
+        if not specs:
+            return results
+
+        batched = plm.infill_logits_multi(
+            [chain_seq for _, chain_seq, _, _ in specs],
+            [mask_local for _, _, mask_local, _ in specs],
+        )
+        for (b, _, _, target_idx), per_pos in zip(specs, batched):
+            for aa_char, logit_val in per_pos[target_idx].items():
                 aa_idx = restype_str_to_int.get(aa_char)
                 if aa_idx is not None:
                     results[b, aa_idx] = logit_val
 
-        log.debug("  [aware] t_batch0=%d  B=%d", t_indices[0].item(), B)
+        log.debug("  [aware] t_batch0=%d  B=%d  n_plm=%d", t_indices[0].item(), B, len(specs))
         # return [B, 21] raw PLM logits; normalization + weighting is done in
         # model_utils.py where MPNN logits are available.
         return results

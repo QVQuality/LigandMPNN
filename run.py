@@ -428,6 +428,7 @@ def main(args) -> None:
             # PLM logit bias (inspired by Alamo et al. 2025)
             if plm is not None:
                 chain_letters_arr = protein_dict["chain_letters"]
+                feature_dict["plm_bias_verbose"] = bool(args.plm_bias_verbose)
 
                 if args.plm_bias_mode == "agnostic":
                     inject_agnostic_bias(
@@ -439,11 +440,14 @@ def main(args) -> None:
 
                 elif args.plm_bias_mode == "aware":
                     chain_info = build_chain_info(chain_letters_arr)
-                    design_mask = feature_dict["chain_mask"][0].cpu().numpy()
+                    # must match the sampler's effective mask (model_utils.py: mask * chain_mask)
+                    design_mask = (
+                        feature_dict["mask"] * feature_dict["chain_mask"]
+                    )[0].cpu().numpy()
                     feature_dict["plm_bias_fn"] = make_aware_callback(plm, chain_info, design_mask)
                     feature_dict["plm_bias_weight"] = args.plm_bias_weight
                     if args.verbose:
-                        n_designed = int(feature_dict["chain_mask"][0].cpu().numpy().sum())
+                        n_designed = int(design_mask.sum())
                         print(f"PLM bias (aware) enabled for {n_designed} positions (lambda={args.plm_bias_weight})")
 
             feature_dict["symmetry_residues"] = remapped_symmetry_residues
@@ -1068,6 +1072,13 @@ if __name__ == "__main__":
         default=1.0,
         help="Scaling factor (lambda) for the PLM logits before combining with the MPNN logits. "
              "Higher values make the PLM distribution more influential.",
+    )
+    argparser.add_argument(
+        "--plm_bias_verbose",
+        type=int,
+        default=0,
+        help="Print a per-position MPNN/PLM logit trace for the first sequence in the batch. "
+             "Very noisy; the same numbers are stored by --save_stats.",
     )
 
     args = argparser.parse_args()

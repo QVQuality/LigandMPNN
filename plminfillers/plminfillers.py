@@ -140,19 +140,45 @@ class PLMInfiller:
         Replaces those positions with [MASK] and does a single forward pass.
         Returns [{AA: logit}, …] in the same order as `positions`.
         """
-        tokens, res_pos = self._tokenize(seq)
-        token_positions = [res_pos[p] for p in positions]
+        return self.infill_logits_multi([seq], [positions])[0]
 
-        masked = tokens.clone()
-        for tp in token_positions:
-            masked[0, tp] = self._mask_id
+    @torch.no_grad()
+    def infill_logits_multi(
+        self, seqs: list[str], positions: list[list[int]]
+    ) -> list[list[dict[str, float]]]:
+        """:meth:`infill_logits` over several sequences, batching the forwards.
 
-        logits = self._forward(masked)
+        Sequences of differing token length cannot share a batch, so they are
+        grouped by length and each group gets one pass.
+        """
+        tokenized = [self._tokenize(s) for s in seqs]
 
-        return [
-            {aa: logits[0, tp, tid].item() for aa, tid in self._aa_ids.items()}
-            for tp in token_positions
-        ]
+        by_length: dict[int, list[int]] = {}
+        for i, (tokens, _) in enumerate(tokenized):
+            by_length.setdefault(tokens.shape[1], []).append(i)
+
+        aa_names = list(self._aa_ids)
+        aa_ids = torch.tensor([self._aa_ids[aa] for aa in aa_names])
+        out: list[list[dict[str, float]]] = [None] * len(seqs)
+
+        for members in by_length.values():
+            batch = torch.cat([tokenized[i][0].clone() for i in members], dim=0)
+            token_positions = [
+                [tokenized[i][1][p] for p in positions[i]] for i in members
+            ]
+            for row, tps in enumerate(token_positions):
+                for tp in tps:
+                    batch[row, tp] = self._mask_id
+
+            logits = self._forward(batch)
+            aa_logits = logits.index_select(-1, aa_ids.to(logits.device)).cpu()
+
+            for row, (i, tps) in enumerate(zip(members, token_positions)):
+                out[i] = [
+                    dict(zip(aa_names, aa_logits[row, tp].tolist())) for tp in tps
+                ]
+
+        return out
 
 
 PLMInfiller._ALL_MODEL_GENERATORS = PLMInfiller._build_model_generators()

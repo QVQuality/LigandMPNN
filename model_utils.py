@@ -332,24 +332,28 @@ class ProteinMPNN(torch.nn.Module):
                     t[:, None, None].repeat(1, 1, h_V_stack[-1].shape[-1]),
                 )[:, 0]
                 logits = self.W_out(h_V_t)  # [B,21]
-                ###
-                # print the logits before PLM bias for debugging/analysis
-                # use the translation table to show top 5 aas
-                ###
-                if chain_mask_t[0].item() > 0.5:
+                # per-position logit trace for batch element 0 (--plm_bias_verbose)
+                trace = (
+                    feature_dict.get("plm_bias_verbose", False)
+                    and chain_mask_t[0].item() > 0.5
+                )
+                if trace:
                     top5_logits, top5_indices = torch.topk(logits, 5, dim=-1)
                     top5_aas = [restype_int_to_str[idx.item()] for idx in top5_indices[0]]
-                    print(f"=== Decoding position {t - 446} ===")
+                    native_aa = restype_int_to_str[S_true[0, t[0]].item()]
+                    print(f"=== Decoding position {t[0].item()} (native {native_aa}) ===")
                     print("Top 5 logits before PLM bias:")
                     for aa, logit in zip(top5_aas, top5_logits[0]):
-                        print(f"  {aa}: {logit.item():.4f} (original AA: {restype_int_to_str[S_true[0, t[0]].item()]})")
+                        print(f"  {aa}: {logit.item():.4f}")
                 log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # [B,21]
 
                 # === PLM logit bias with z-score normalization ===
                 # PLM logits are rescaled to match the MPNN logit distribution
                 # so that weight=1.0 gives equal (50/50) influence
                 plm_weight = feature_dict.get("plm_bias_weight", 0.0)
-                if plm_weight > 0 and chain_mask_t[0].item() > 0.5:
+                # decoding order is drawn per batch element, so any element may be
+                # the one sitting at a designed position here
+                if plm_weight > 0 and chain_mask_t.max().item() > 0.5:
                     plm_raw = None
                     # agnostic: static per-position PLM logits
                     plm_static = feature_dict.get("plm_bias_static")
@@ -364,15 +368,12 @@ class ProteinMPNN(torch.nn.Module):
                         plm_bias_t = plm_bias_fn(S, S_true, t)
                         if plm_bias_t is not None:
                             plm_raw = plm_bias_t.to(device)  # [B, 21]
-                    ###
-                    # also do the same printing for plm (raw)
-                    ###
-                    if plm_raw is not None:
+                    if trace and plm_raw is not None:
                         top5_plm_logits, top5_plm_indices = torch.topk(plm_raw, 5, dim=-1)
                         top5_plm_aas = [restype_int_to_str[idx.item()] for idx in top5_plm_indices[0]]
                         print("Top 5 PLM logits:")
                         for aa, logit in zip(top5_plm_aas, top5_plm_logits[0]):
-                            print(f"  {aa}: {logit.item():.4f} (original AA: {restype_int_to_str[S_true[0, t[0]].item()]})")
+                            print(f"  {aa}: {logit.item():.4f}")
                     # z-score normalize & add
                     if plm_raw is not None and plm_raw[:, :20].abs().sum() > 0:
                         mpnn_20 = logits[:, :20]
@@ -383,7 +384,10 @@ class ProteinMPNN(torch.nn.Module):
                         plm_mean = plm_20.mean(dim=-1, keepdim=True)
                         plm_normed = torch.zeros_like(plm_raw)
                         plm_normed[:, :20] = (plm_20 - plm_mean) / plm_std * mpnn_std + mpnn_mean
-                        plm_normed_weighted = plm_weight * plm_normed
+                        # elements decoding a position they do not redesign get no bias
+                        plm_normed_weighted = (
+                            plm_weight * plm_normed * chain_mask_t[:, None]
+                        )
                         bias_t = bias_t + plm_normed_weighted
 
                         # debug: record per-position logit breakdown
@@ -396,14 +400,11 @@ class ProteinMPNN(torch.nn.Module):
                 probs = torch.nn.functional.softmax(
                     (logits + bias_t) / temperature, dim=-1
                 )  # [B,21]
-                ###
-                # debug: print ALL probs
-                ###
-                if chain_mask_t[0].item() > 0.5:
+                if trace:
                     print("Probabilities after adding bias and applying temperature:")
                     for aa_idx in range(probs.shape[-1]):
                         aa = restype_int_to_str[aa_idx] if aa_idx < 20 else "X"
-                        print(f"  {aa}: {probs[0, aa_idx].item():.4f} (original AA: {restype_int_to_str[S_true[0, t[0]].item()]})")
+                        print(f"  {aa}: {probs[0, aa_idx].item():.4f}")
                     print("=========================================================")
                 probs_sample = probs[:, :20] / torch.sum(
                     probs[:, :20], dim=-1, keepdim=True
