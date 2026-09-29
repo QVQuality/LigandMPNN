@@ -97,10 +97,10 @@ async def paint_with_an_rcmpnn(
     start_time = time.time()
     try:
         logging.info(f"Running command: {' '.join(cmd)}")
-        _ = sp.run(cmd)
+        _ = sp.run(cmd, check=True)
     except sp.CalledProcessError as e:
-        logging.error(f"Command failed with error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: chai-lab a3m-to-pqt failed: {e.stderr}")
+        logging.error(f"LigandMPNN failed with exit code {e.returncode}")
+        raise HTTPException(status_code=500, detail=f"LigandMPNN failed with exit code {e.returncode}")
 
     # postprocessing
     seqs_dir = raw_output_dir / "seqs"
