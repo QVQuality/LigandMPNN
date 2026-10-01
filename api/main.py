@@ -43,11 +43,16 @@ async def paint_with_an_rcmpnn(
     random_seed: int,
     ckpt_path: Path | None,
     run_output_dirname: str,
+    bias_aas: str | None = None,
+    bias_aas_per_residue: str | None = None,
+    omit_aas_per_residue: str | None = None,
     plm_bias: str = "",
     plm_bias_mode: str = "aware",
     plm_bias_weight: float = 1.0,
     save_stats: bool = False,
 ):
+    """The two per-residue arguments carry the JSON `run.py` expects to read from a file,
+    e.g. `{"A12": {"G": -0.3}}` for the bias and `{"A12": "PG"}` for the omission."""
     # read the pdb file, if it exists
     if not pdb_file.filename.endswith(".pdb"):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .pdb files are accepted.")
@@ -85,6 +90,16 @@ async def paint_with_an_rcmpnn(
     ]
     if omit_aas is not None and omit_aas != "":
         cmd += ["--omit_AA", omit_aas]
+    if bias_aas:
+        cmd += ["--bias_AA", bias_aas]
+    for flag, spec in (
+        ("--bias_AA_per_residue", bias_aas_per_residue),
+        ("--omit_AA_per_residue", omit_aas_per_residue),
+    ):
+        if spec and spec != "{}":
+            spec_path = Path(temp_dir) / f"{flag.lstrip('-')}.json"
+            spec_path.write_text(spec)
+            cmd += [flag, str(spec_path)]
     if ckpt_path is not None:
         cmd += [f"--checkpoint_{model_type}", str(ckpt_path)]
     if plm_bias:
@@ -137,6 +152,9 @@ async def paint_with_pmpnn(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
@@ -162,6 +180,9 @@ async def paint_with_pmpnn(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=ckpt_path,
@@ -179,6 +200,9 @@ async def paint_with_hmpnn(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
@@ -204,6 +228,9 @@ async def paint_with_hmpnn(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=ckpt_path,
@@ -221,6 +248,9 @@ async def paint_with_lmpnn(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
@@ -246,6 +276,9 @@ async def paint_with_lmpnn(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=ckpt_path,
@@ -263,6 +296,9 @@ async def paint_with_smpnn(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     noise: Optional[str] = Form("0.10"),
@@ -288,6 +324,9 @@ async def paint_with_smpnn(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=ckpt_path,
@@ -305,6 +344,9 @@ async def paint_with_pmpnn_gml(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     run_output_dirname: str = Form(""),
@@ -319,6 +361,9 @@ async def paint_with_pmpnn_gml(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=None,
@@ -336,6 +381,9 @@ async def paint_with_pmpnn_prml(
     designed_positions: str = Form(...),
     num_seq_per_target: int = Form(1),
     omit_aas: Optional[str] = Form("C"),
+    bias_aas: Optional[str] = Form(None),
+    bias_aas_per_residue: Optional[str] = Form(None),
+    omit_aas_per_residue: Optional[str] = Form(None),
     temperature: Optional[float] = Form(0.1),
     random_seed: Optional[int] = Form(42),
     run_output_dirname: str = Form(""),
@@ -350,6 +398,9 @@ async def paint_with_pmpnn_prml(
         designed_positions=designed_positions,
         num_seq_per_target=num_seq_per_target,
         omit_aas=omit_aas,
+        bias_aas=bias_aas,
+        bias_aas_per_residue=bias_aas_per_residue,
+        omit_aas_per_residue=omit_aas_per_residue,
         temperature=temperature,
         random_seed=random_seed,
         ckpt_path=None,
