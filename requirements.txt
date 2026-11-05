@@ -1,21 +1,13 @@
 ablang2
 biopython==1.79
-filelock==3.13.1
-fsspec==2024.3.1
-Jinja2==3.1.3
-MarkupSafe==2.1.5
-mpmath==1.3.0
-networkx==3.2.1
 numpy<1.24
 ProDy==2.4.1
-pyparsing==3.1.1
 setuptools<82 # >=82 removed pkg_resources which is required by prody
 scipy==1.12.0
-sympy
-# Keep Torch on a pre-CUDA-13 build so the RCMPNN container remains compatible
-# with hosts that expose older NVIDIA driver/runtime combinations into Docker.
-torch==2.6.0
+# Still a pre-CUDA-13 build, so a host with an older NVIDIA driver/runtime keeps working. Torch 2.7
+# is the first release with a CUDA 12.8 build, the one that carries Blackwell (sm_120) kernels and
+# still runs on the Ada; constraints.txt holds everything that is not part of that stack.
+torch==2.7.1
 transformers
-typing_extensions==4.10.0
 ml-collections==0.1.1
 dm-tree==0.1.8
